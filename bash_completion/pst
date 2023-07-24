@@ -1,0 +1,12 @@
+_bc_pst() {
+	local count="${#COMP_WORDS[@]}"
+	local last_word="${COMP_WORDS[$count - 1]}"
+
+	if [[ "$last_word" == -* ]]; then
+		COMPREPLY=( $(compgen -W "--opt= --kernel --threads --rss --cpu-time --total-io --no-tree --no-full --no-pid --no-name --no-header --no-trunc --ascii --verbose --version --help" -- "$last_word" ) )
+	else
+		COMPREPLY+=( $(compgen -W "$(ps -p 2 --ppid 2 --deselect -o cmd= | cut -d' ' -f1 | rev | cut -d/ -f1 | rev | uniq)" -- "$last_word" ) )
+	fi
+}
+
+complete -F _bc_pst pst
