@@ -56,7 +56,7 @@ using namespace std;
 
 /////////////////////////////////////////////////////////////////////////
 
-#define VERSION "v0.1"
+#define VERSION "v0.2"
 
 static int printErr(string msg)
 {
@@ -467,10 +467,20 @@ static int handleProcReadError(string path, Proc &proc)
 
 static int getLines(string path, Proc &proc, auto cb)
 {
+    errno = 0;
+
     ifstream file;
     file.open(path);
-    if (!file.good())
+
+    try
+    {
+        if (!file.good())
+            return handleProcReadError(path, proc);
+    }
+    catch (const std::ios::failure &)
+    {
         return handleProcReadError(path, proc);
+    }
 
     string line, field;
 
@@ -670,8 +680,17 @@ static int readLineInFile(string path, string &line)
 {
     ifstream file;
     file.open(path);
-    if (!file.good())
+
+    try
+    {
+        if (!file.good())
+            return 1;
+    }
+    catch (const std::ios::failure &)
+    {
         return 1;
+    }
+
     getline(file, line);
     file.close();
     return 0;
