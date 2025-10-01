@@ -56,7 +56,7 @@ using namespace std;
 
 /////////////////////////////////////////////////////////////////////////
 
-#define VERSION "v0.2"
+#define VERSION "v0.3"
 
 static int printErr(string msg)
 {
