@@ -101,8 +101,7 @@ static int showUsage()
          << "Parses Linux procfs and prints process tree of all or matched processes.\n"
          << endl
          << "Options:\n"
-         << "\t-o, --opt <opt,...>   Print only given columns\n"
-         << "\t                      Columns: all, ppid, pid, tty, uid, ram*, swap*, cpu, age, io*, cmd\n"
+         << "\t-o, --opt <opt,...>   Print only given columns (see below)\n"
          << "\t--kernel              Show kernel threads\n"
          << "\t--threads             Show process threads\n"
          << "\t--rss                 Show RSS RAM and SWAP instead of PSS\n"
@@ -119,7 +118,9 @@ static int showUsage()
          << "\t-V, --version         Show version\n"
          << "\t-h, --help            This help message\n"
          << endl
-         << "\t* Required capabilities: CAP_SYS_PTRACE and CAP_DAC_READ_SEARCH\n"
+         << "\tColumns: all, ppid, pgid, sid, pid, tty, uid, ram*, swap*, cpu, age, io*, cmd\n"
+         << endl
+         << "\t* Required capabilities: setcap cap_sys_ptrace,cap_dac_read_search+ep\n"
          << endl;
 
     return 1;
@@ -137,7 +138,7 @@ struct Proc
     pid_t tid = 0;
 
     // stat
-    int ppid = -1;
+    int ppid = -1, pgid = -1, sid = -1;
     string tty = "?";
     long cpuTime = -1; // millisec
     long age = -1;     // millisec
@@ -161,9 +162,7 @@ static map<pid_t, Proc> procMap;
 static map<pid_t, list<Proc>> childMap;
 static map<pid_t, string> errMap;
 
-static int col_wid_ppid = 8;
 static int col_wid_pid = 8;
-static int col_wid_tid = 8;
 static int col_wid_tty = 8;
 static int col_wid_uid = 10;
 static int col_wid_ram = 10;
@@ -174,6 +173,8 @@ static int col_wid_rio = 10;
 static int col_wid_wio = 10;
 
 static bool show_col_ppid = true;
+static bool show_col_pgid = false;
+static bool show_col_sid = false;
 static bool show_col_pid = true;
 static bool show_col_tty = false;
 static bool show_col_uid = true;
@@ -224,10 +225,14 @@ static int parseProcOpts(char *procOpts)
     while (token)
     {
         if (!strcmp(token, "all"))
-            show_col_ppid = show_col_pid = show_col_tty = show_col_uid = show_col_ram = show_col_swap =
-                show_col_cpu = show_col_age = show_col_rio = show_col_wio = show_col_cmd = true;
+            show_col_ppid = show_col_pgid = show_col_sid = show_col_pid = show_col_tty = show_col_uid = show_col_ram =
+                show_col_swap = show_col_cpu = show_col_age = show_col_rio = show_col_wio = show_col_cmd = true;
         else if (!strcmp(token, "ppid"))
             show_col_ppid = true;
+        else if (!strcmp(token, "pgid"))
+            show_col_pgid = true;
+        else if (!strcmp(token, "sid"))
+            show_col_sid = true;
         else if (!strcmp(token, "pid"))
             show_col_pid = true;
         else if (!strcmp(token, "tty"))
@@ -252,7 +257,8 @@ static int parseProcOpts(char *procOpts)
         token = strtok(0, ",");
     }
 
-    if (!show_col_ppid && !show_col_pid && !show_col_tty && !show_col_uid && !show_col_ram && !show_col_swap && !show_col_cpu && !show_col_age && !show_col_rio && !show_col_wio && !show_col_cmd)
+    if (!show_col_ppid && !show_col_pgid && !show_col_sid && !show_col_pid && !show_col_tty && !show_col_uid &&
+        !show_col_ram && !show_col_swap && !show_col_cpu && !show_col_age && !show_col_rio && !show_col_wio && !show_col_cmd)
         return printErr("No column selected");
 
     return 0;
@@ -539,12 +545,19 @@ static void parseStat(Proc &proc)
     if (skipKernel && proc.ppid == 2)
         return;
 
+    // 5th field (pgid)
+    del = strchr(del, ' ');
+    del++;
+    proc.pgid = stoi(del);
+
+    // 6th field (sid)
+    del = strchr(del, ' ');
+    del++;
+    proc.sid = stoi(del);
+
     // 7th field (tty_nr)
-    for (int i = 1; i <= 3; i++)
-    {
-        del = strchr(del, ' ');
-        del++;
-    }
+    del = strchr(del, ' ');
+    del++;
 
     if (show_col_tty)
     {
@@ -999,11 +1012,15 @@ static void printProc(Proc proc, string prefix)
     ostringstream line;
 
     if (show_col_ppid)
-        line << setw(col_wid_ppid) << proc.ppid;
+        line << setw(col_wid_pid) << proc.ppid;
+    if (show_col_pgid)
+        line << setw(col_wid_pid) << proc.pgid;
+    if (show_col_sid)
+        line << setw(col_wid_pid) << proc.sid;
     if (show_col_pid)
         line << setw(col_wid_pid) << proc.pid;
     if (!skipThreads)
-        line << setw(col_wid_tid) << (proc.tid ? to_string(proc.tid) : "-");
+        line << setw(col_wid_pid) << (proc.tid ? to_string(proc.tid) : "-");
     if (show_col_tty)
         line << setw(col_wid_tty) << (proc.tid ? "-" : proc.tty);
     if (show_col_uid)
@@ -1148,9 +1165,11 @@ static void printHeader()
         }
     };
 
-    printHdr(show_col_ppid, "PPID", col_wid_ppid, false);
+    printHdr(show_col_ppid, "PPID", col_wid_pid, false);
+    printHdr(show_col_pgid, "PGID", col_wid_pid, false);
+    printHdr(show_col_sid, "SID", col_wid_pid, false);
     printHdr(show_col_pid, "PID", col_wid_pid, false);
-    printHdr(!skipThreads, "TID", col_wid_tid, false);
+    printHdr(!skipThreads, "TID", col_wid_pid, false);
     printHdr(show_col_tty, "TTY", col_wid_tty, false);
     printHdr(show_col_uid, "UID", col_wid_uid, true);
     printHdr(show_col_ram, "RAM", col_wid_ram, false);
